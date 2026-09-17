@@ -1,7 +1,7 @@
 {
   "name": "@whatsapp/ui",
   "version": "0.0.0",
-  "description": "Shared WhatsApp message components for Frappe apps",
+  "description": "Shared WhatsApp components for Frappe apps",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -12,6 +12,10 @@
     "./Messages": {
       "import": "./src/components/Messages/index.ts",
       "types": "./src/components/Messages/index.ts"
+    },
+    "./Account": {
+      "import": "./src/components/Account/index.ts",
+      "types": "./src/components/Account/index.ts"
     },
     "./common": {
       "import": "./src/components/common/index.ts",
@@ -42,6 +46,7 @@
     "dompurify": "^3.4.0"
   },
   "peerDependencies": {
+    "@framework/ui": "*",
     "frappe-ui": ">=1.0.0-beta.16",
     "vue": ">=3.3.0"
   }

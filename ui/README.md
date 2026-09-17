@@ -1,7 +1,8 @@
 # @whatsapp/ui
 
-Shared WhatsApp message components for Frappe apps: the messages attached to one or more
-reference documents, drawn as a flat list in send order, plus the input that sends into it.
+Shared WhatsApp components for Frappe apps: the messages attached to one or more reference
+documents, drawn as a flat list in send order, the input that sends into it, and the account
+form an admin configures a number with.
 
 The package ships **raw `.vue`/`.ts` source** — there is no build step and no published
 bundle. The host app's bundler compiles it in place, so the host owns the toolchain,
@@ -33,6 +34,10 @@ and binds a controller — it does not write an API or a mapping layer. See [Usa
      dedupe: ['vue', 'frappe-ui', 'reka-ui', 'dompurify'],
    }
    ```
+
+   The account form is built on `@framework/ui`'s `Grid` and `Link`, so the host links that
+   package too (`"@framework/ui": "link:../../frappe/ui"`) and adds its `frameworkUI()` vite
+   plugin, which dedupes the same singletons and resolves the package's own dependencies.
 
    Instead of hand-writing the `dedupe` array you can add the plugin, which sets the
    same list via `config()`:
@@ -170,6 +175,45 @@ notification (scroll to the bottom, close a drawer), not a request to perform th
 controller clears what the send consumed: a text send is a full `reset()`, a media send
 clears only the attachment and the reply, because its body was the caption and whatever is
 still typed in the box is a separate unsent message.
+
+### The account form
+
+`useAccount()` and `AccountForm` render one `WhatsApp Account`: the plain fields and the Append
+Actions table, with the Append To rule the desk form has (changing a row's doctype blanks its
+four mappings and reloads their options) inside the component, so a host does not write it.
+
+```vue
+<script setup lang="ts">
+import { AccountForm, useAccount } from "@whatsapp/ui";
+
+const props = defineProps<{ name?: string }>();
+const account = useAccount({ name: () => props.name });
+</script>
+
+<template>
+  <Button
+    v-if="account.isDirty || account.isNew"
+    :label="account.isNew ? 'Create' : 'Save'"
+    :loading="account.saving"
+    @click="account.save()"
+  />
+  <AccountForm :controller="account" />
+</template>
+```
+
+No `name` renders a blank account that the first `save()` inserts; `save()` resolves to the
+docname, so the host can navigate or re-key. The form draws no save button: the host decides
+where it sits. The save error shows under the form, not as a toast, so it survives the host's
+own toasts.
+
+Save sends the whole document through `frappe.client.insert` or `frappe.client.save`, and the
+doctype's own validation is what reports a missing mapping. The access token arrives masked
+and goes back untouched unless the admin types over it; never blank it, Frappe reads an empty
+value as "delete the stored token".
+
+`AppendActionsTable` is exported on its own for a host that lays the fields out differently.
+It is `@framework/ui`'s `Grid` with a `Link` for Append To, a `Select` for Trigger On, and a
+`Combobox` per mapping slot fed by `controller.optionsFor(doctype, slot)`.
 
 ### Sending a template
 
