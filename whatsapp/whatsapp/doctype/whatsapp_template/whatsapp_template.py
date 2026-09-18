@@ -80,20 +80,6 @@ class WhatsAppTemplate(Document):
 
 		self.set("template_variables", new_rows)
 
-	def validate_template_variables(self) -> None:
-		variables = get_template_variables(self.message)
-		if self.header_text and self.header_type == "Text":
-			variables.extend(get_template_variables(self.header_text))
-
-		if len(variables) != len(self.template_variables):
-			frappe.throw(
-				"Number of template variables in table does not match the number of variables in the message"
-			)
-
-		for variable in self.template_variables:
-			if variable.variable_name not in variables:
-				frappe.throw(f"Variable {variable.variable_name} not found in message")
-
 	def _set_mime_type(self) -> None:
 		if not self.header_media:
 			self.mime_type = None
@@ -135,8 +121,9 @@ class WhatsAppTemplate(Document):
 		if not re.match(r"^[a-zA-Z0-9_]+$", self.template_name):
 			frappe.throw("Template name should only contain alphanumeric characters and underscores")
 
-	def on_validate(self) -> None:
-		self.validate_template_variables()
+	def validate(self) -> None:
+		self._derive_template_name()
+		self._sync_template_variables()
 		self.validate_template_name()
 
 	def _derive_template_name(self) -> None:
@@ -164,8 +151,6 @@ class WhatsAppTemplate(Document):
 			self.get("__islocal"),
 		)
 
-		self._derive_template_name()
-		self._sync_template_variables()
 		self._set_mime_type()
 
 		if self.flags.get("from_sync"):
@@ -349,10 +334,9 @@ def normalize_string(s: str) -> str:
 
 
 def get_template_variables(s: str) -> list[str]:
-	variables_list = re.findall(r"\{\{\s*([^}]+)\s*\}\}", s) if s else []
 	if not s:
 		return []
-	return variables_list
+	return [name.strip() for name in re.findall(r"\{\{\s*([^}]+)\s*\}\}", s)]
 
 
 def get_settings() -> WhatsAppSettings:
