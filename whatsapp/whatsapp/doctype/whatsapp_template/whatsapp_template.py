@@ -162,9 +162,9 @@ class WhatsAppTemplate(Document):
 		if not self.whatsapp_template_id:
 			logger.info("before_save | no whatsapp_template_id, proceeding to push to Meta")
 			self._push_to_meta()
-		elif self.get("__islocal"):
+		elif self.has_value_changed("whatsapp_template_id"):
 			logger.info(
-				"before_save | __islocal with whatsapp_template_id=%s, already created by API, skipping",
+				"before_save | whatsapp_template_id=%s was just assigned, already created by API, skipping",
 				self.whatsapp_template_id,
 			)
 		else:
