@@ -99,23 +99,20 @@ export function useTemplate(options: UseTemplateOptions = {}): TemplateControlle
     saving.value = true;
     error.value = null;
     mapVariablesToFields();
-    let saved: WhatsAppTemplateDoc;
     try {
       const method = isNew.value ? "frappe.client.insert" : "frappe.client.save";
-      saved = await call<WhatsAppTemplateDoc>(method, { doc: doc.value });
+      const saved = await call<WhatsAppTemplateDoc>(method, { doc: doc.value });
+      // The host may have moved on to another document while the save was in flight.
+      if (docName.value !== name) return saved.name!;
+      docName.value = saved.name!;
+      await reload();
+      return docName.value;
     } catch (e) {
-      if (docName.value === name) {
-        error.value = e;
-        saving.value = false;
-      }
+      if (docName.value === name) error.value = e;
       return null;
+    } finally {
+      saving.value = false;
     }
-    // The host may have moved on to another document while the save was in flight.
-    if (docName.value !== name) return saved.name!;
-    docName.value = saved.name!;
-    await reload();
-    saving.value = false;
-    return docName.value;
   }
 
   // Done at save rather than in a watcher so a loaded document is not dirtied by it.
