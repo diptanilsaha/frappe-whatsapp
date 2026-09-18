@@ -31,7 +31,12 @@ function onAppendTo(row: AppendAction, doctype: string | number | null) {
 </script>
 
 <template>
-	<Grid v-model="controller.doc.append_actions" :columns="columns" :new-row="emptyAppendAction">
+	<Grid
+		v-model="controller.doc.append_actions"
+		:columns="columns"
+		:new-row="emptyAppendAction"
+		class="append-actions"
+	>
 		<template #cell="{ row, column, value, update }">
 			<Link
 				v-if="column.fieldname === 'append_to'"
@@ -58,3 +63,10 @@ function onAppendTo(row: AppendAction, doctype: string | number | null) {
 		</template>
 	</Grid>
 </template>
+
+<style scoped>
+/* Grid always draws a per-row edit button for a row dialog; every field here edits inline. */
+.append-actions :deep(.grid-row > div:last-child button) {
+	display: none;
+}
+</style>
