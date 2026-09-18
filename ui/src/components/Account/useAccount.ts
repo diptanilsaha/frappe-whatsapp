@@ -100,6 +100,7 @@ export function useAccount(options: UseAccountOptions = {}): AccountController {
   }
 
   async function save(): Promise<string | null> {
+    if (saving.value) return null;
     const name = docName.value;
     saving.value = true;
     error.value = null;

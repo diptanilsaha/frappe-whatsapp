@@ -90,6 +90,7 @@ export function useTemplate(options: UseTemplateOptions = {}): TemplateControlle
   }
 
   async function save(): Promise<string | null> {
+    if (saving.value) return null;
     if (lockReason.value) {
       error.value = lockReason.value;
       return null;
