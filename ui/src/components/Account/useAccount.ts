@@ -103,8 +103,11 @@ export function useAccount(options: UseAccountOptions = {}): AccountController {
     saving.value = true;
     error.value = null;
     try {
+      const name = docName.value;
       const method = isNew.value ? "frappe.client.insert" : "frappe.client.save";
       const saved = await call<WhatsAppAccount>(method, { doc: doc.value });
+      // The host may have moved on to another document while the save was in flight.
+      if (docName.value !== name) return saved.name!;
       docName.value = saved.name!;
       await reload();
       return docName.value;
