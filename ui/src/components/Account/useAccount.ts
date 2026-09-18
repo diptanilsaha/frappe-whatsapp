@@ -82,20 +82,20 @@ export function useAccount(options: UseAccountOptions = {}): AccountController {
       adopt(emptyAccount());
       return;
     }
+    const name = docName.value;
     loading.value = true;
     error.value = null;
     try {
-      const account = await call<WhatsAppAccount>("frappe.client.get", {
-        doctype: DOCTYPE,
-        name: docName.value,
-      });
+      const account = await call<WhatsAppAccount>("frappe.client.get", { doctype: DOCTYPE, name });
+      // A slower load for a name the host has since moved on from must not win.
+      if (docName.value !== name) return;
       adopt(account);
       const doctypes = new Set(account.append_actions.map((row) => row.append_to).filter(Boolean));
       await Promise.all([...doctypes].map(loadOptions));
     } catch (e) {
-      error.value = e;
+      if (docName.value === name) error.value = e;
     } finally {
-      loading.value = false;
+      if (docName.value === name) loading.value = false;
     }
   }
 
