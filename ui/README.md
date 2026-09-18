@@ -244,6 +244,7 @@ const preview = ref(false);
     <template #right-header>
       <Button :label="preview ? 'Edit' : 'Preview'" @click="preview = !preview" />
       <Button
+        v-if="template.editable"
         variant="solid"
         :label="template.isNew ? 'Create' : 'Save'"
         :loading="template.saving"
@@ -260,6 +261,12 @@ const preview = ref(false);
 **One indicator.** `template.indicator` is the single badge beside the title, as desk shows it:
 `Not Saved` while the document is new or dirty, otherwise the Meta status with its colour. Do not
 show the status and the unsaved state side by side.
+
+**Locked while Meta holds it.** Meta edits only approved or rejected templates, so a pending or
+deleted one is read-only: every field locks, the form says why above the fields, and
+`template.editable` is false so the host hides Save. `template.lockReason` is that sentence for a
+host that wants it elsewhere. The status is as fresh as the last webhook or sync, so a form that
+looks locked after Meta has moved on wants a `reload()`.
 
 Save goes through `frappe.client.insert` or `frappe.client.save`; the doctype's own
 `before_save` pushes the template to Meta, so a rejection from Meta comes back through `save()`

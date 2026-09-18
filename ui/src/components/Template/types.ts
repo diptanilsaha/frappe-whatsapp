@@ -76,6 +76,10 @@ export interface TemplateController {
   /** true until the first successful save creates the record */
   isNew: boolean;
   indicator: TemplateIndicator | null;
+  /** false once Meta holds the template in a state it refuses to edit */
+  editable: boolean;
+  /** why the template cannot be edited; null when it can */
+  lockReason: string | null;
   /** the last load or save failure, cleared when the next one starts */
   error: unknown;
   /** fieldnames of `doc.reference_doctype`; empty until loaded, or when there is no doctype */

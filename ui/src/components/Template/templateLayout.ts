@@ -43,8 +43,8 @@ const BUTTON_COLUMNS: FieldNode[] = [
 ];
 
 export function templateLayout(controller: TemplateController): FormLayoutSchema {
-  const { isNew, doc } = controller;
-  return [
+  const { isNew, doc, editable } = controller;
+  const schema: FormLayoutSchema = [
     {
       sections: [
         {
@@ -202,4 +202,18 @@ export function templateLayout(controller: TemplateController): FormLayoutSchema
       ],
     },
   ];
+  return editable ? schema : lockFields(schema);
+}
+
+function lockFields(schema: FormLayoutSchema): FormLayoutSchema {
+  return schema.map((tab) => ({
+    ...tab,
+    sections: tab.sections.map((section) => ({
+      ...section,
+      columns: section.columns.map((column) => ({
+        ...column,
+        fields: column.fields.map((field) => ({ ...field, readOnly: true })),
+      })),
+    })),
+  }));
 }

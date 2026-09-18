@@ -21,6 +21,8 @@ from whatsapp.whatsapp.api.whatsapp import WhatsApp
 from whatsapp.whatsapp.doctype.whatsapp_account.whatsapp_account import WhatsAppAccount
 from whatsapp.whatsapp.doctype.whatsapp_settings.whatsapp_settings import WhatsAppSettings
 
+EDITABLE_STATUSES = ("Approved", "Rejected")
+
 
 class WhatsAppTemplate(Document):
 	# begin: auto-generated types
@@ -274,6 +276,13 @@ class WhatsAppTemplate(Document):
 				account=self.whatsapp_account,
 			)
 			frappe.throw(_("WhatsApp Account is required to update template in Meta"))
+
+		if self.status not in EDITABLE_STATUSES:
+			frappe.throw(
+				_("Meta only allows editing approved or rejected templates; this one is {0}.").format(
+					_(self.status)
+				)
+			)
 
 		whatsapp = _get_whatsapp_client(self.whatsapp_account)
 

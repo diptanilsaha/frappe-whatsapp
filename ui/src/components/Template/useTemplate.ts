@@ -20,6 +20,12 @@ const STATUS_THEME: Record<TemplateStatus, TemplateIndicator["theme"]> = {
   Deleted: "gray",
 };
 
+// Meta edits only approved or rejected templates.
+const LOCK_REASON: Partial<Record<TemplateStatus, string>> = {
+  Pending: "Meta is reviewing this template. It can be edited once approved or rejected.",
+  Deleted: "This template was deleted on Meta and can no longer be edited.",
+};
+
 export function emptyTemplate(): WhatsAppTemplateDoc {
   return {
     doctype: DOCTYPE,
@@ -50,6 +56,12 @@ export function useTemplate(options: UseTemplateOptions = {}): TemplateControlle
     return status ? { label: status, theme: STATUS_THEME[status] } : null;
   });
 
+  const lockReason = computed(() => {
+    if (isNew.value || !doc.value.whatsapp_template_id) return null;
+    return LOCK_REASON[doc.value.status ?? "Pending"] ?? null;
+  });
+  const editable = computed(() => !lockReason.value);
+
   function adopt(template: WhatsAppTemplateDoc) {
     doc.value = template;
     loadedJson.value = JSON.stringify(template);
@@ -78,6 +90,10 @@ export function useTemplate(options: UseTemplateOptions = {}): TemplateControlle
   }
 
   async function save(): Promise<string | null> {
+    if (lockReason.value) {
+      error.value = lockReason.value;
+      return null;
+    }
     saving.value = true;
     error.value = null;
     mapVariablesToFields();
@@ -152,6 +168,8 @@ export function useTemplate(options: UseTemplateOptions = {}): TemplateControlle
     isDirty,
     isNew,
     indicator,
+    editable,
+    lockReason,
     error,
     fieldOptions,
     save,

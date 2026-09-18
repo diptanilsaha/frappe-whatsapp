@@ -89,6 +89,7 @@ const toolbar = [Bold, Italic, Strike];
 			<!-- `Editor` is renderless; without this wrapper the outer column's gap splits the toolbar from the content. -->
 			<div>
 				<div
+					v-if="!field.readOnly"
 					class="flex items-center rounded-t border border-b-0 border-outline-gray-2 bg-surface-gray-1 px-1 py-1"
 				>
 					<EditorFixedMenu :items="toolbar" />
