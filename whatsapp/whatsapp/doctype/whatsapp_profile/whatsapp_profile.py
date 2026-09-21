@@ -2,10 +2,16 @@
 # For license information, please see license.txt
 
 import datetime
+import re
 
 import frappe
+import phonenumbers
 from frappe import _
+from frappe.geo.country_info import get_country_info
 from frappe.model.document import Document
+from phonenumbers import NumberParseException, PhoneNumberFormat
+
+FALLBACK_REGION = "IN"
 
 
 class WhatsAppProfile(Document):
@@ -52,6 +58,7 @@ class WhatsAppProfile(Document):
 		return rows[0].timestamp or rows[0].creation
 
 	def validate(self) -> None:
+		self.phone_number = normalize_phone(self.phone_number)
 		self._validate_unique_phone_per_account()
 
 	def before_insert(self) -> None:
@@ -76,8 +83,36 @@ class WhatsAppProfile(Document):
 	def _set_defaults(self) -> None:
 		if not self.status:
 			self.status = "Active"
-		if self.phone_number:
-			self.phone_number = self.phone_number.strip()
+
+
+def get_default_region() -> str:
+	"""Region that numbers typed without a country code are parsed in."""
+	country = frappe.db.get_single_value("System Settings", "country")
+	if not country:
+		return FALLBACK_REGION
+	code = get_country_info(country).get("code")
+	return code.upper() if code else FALLBACK_REGION
+
+
+def normalize_phone(phone_number: str | None) -> str:
+	"""E.164 form of a phone number. One that does not parse as valid keeps its digits
+	behind a plus sign, which is still stable across spacing and punctuation."""
+	if not phone_number:
+		return ""
+	raw = phone_number.strip()
+	digits = re.sub(r"\D", "", raw)
+	if not digits:
+		return ""
+
+	region = get_default_region()
+	for candidate in (raw, f"+{digits}"):
+		try:
+			parsed = phonenumbers.parse(candidate, region)
+		except NumberParseException:
+			continue
+		if phonenumbers.is_valid_number(parsed):
+			return phonenumbers.format_number(parsed, PhoneNumberFormat.E164)
+	return f"+{digits}"
 
 
 def get_or_create_profile(
@@ -86,6 +121,7 @@ def get_or_create_profile(
 	profile_name: str | None = None,
 	wa_id: str | None = None,
 ) -> str:
+	phone_number = normalize_phone(phone_number)
 	existing = resolve_profile_by_phone(phone_number, account_name)
 	if existing:
 		profile = frappe.get_doc("WhatsApp Profile", existing)
@@ -100,13 +136,36 @@ def get_or_create_profile(
 	doc.wa_id = wa_id or phone_number
 	doc.status = "Active"
 	doc.flags.ignore_permissions = True
-	doc.insert()
+
+	# A concurrent delivery can insert the same sender first: the unique index then
+	# rejects this insert, and only a locking read sees the profile it committed.
+	frappe.db.savepoint("whatsapp_profile_insert")
+	try:
+		doc.insert()
+	except frappe.ValidationError:
+		frappe.db.rollback(save_point="whatsapp_profile_insert")
+		existing = resolve_profile_by_phone(phone_number, account_name, for_update=True)
+		if not existing:
+			raise
+		return existing
 	return doc.name
 
 
-def resolve_profile_by_phone(phone_number: str, account_name: str) -> str | None:
+def resolve_profile_by_phone(phone_number: str, account_name: str, for_update: bool = False) -> str | None:
 	return frappe.db.get_value(
 		"WhatsApp Profile",
-		{"phone_number": phone_number, "whatsapp_account": account_name},
+		{"phone_number": normalize_phone(phone_number), "whatsapp_account": account_name},
 		"name",
+		for_update=for_update,
 	)
+
+
+def lock_profile(profile_name: str) -> None:
+	"""Hold the profile's row until this transaction ends, so concurrent messages from
+	one sender are handled one at a time."""
+	frappe.db.get_value("WhatsApp Profile", profile_name, "name", for_update=True)
+
+
+def ensure_unique_phone_per_account() -> None:
+	"""The controller check cannot stop two concurrent inserts of the same number."""
+	frappe.db.add_unique("WhatsApp Profile", ["whatsapp_account", "phone_number"])

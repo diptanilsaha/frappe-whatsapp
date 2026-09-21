@@ -56,7 +56,8 @@
    "fieldtype": "Link",
    "label": "To",
    "options": "WhatsApp Profile",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "default": "Outgoing",

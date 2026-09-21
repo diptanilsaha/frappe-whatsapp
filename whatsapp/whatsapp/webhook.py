@@ -20,6 +20,7 @@ from whatsapp.whatsapp.doctype.whatsapp_message.whatsapp_message import (
 )
 from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import (
 	get_or_create_profile,
+	lock_profile,
 )
 
 MESSAGE_FIELDS = frozenset({"messages", "message_template_status_update"})
@@ -137,12 +138,17 @@ def _create_incoming_message(msg: dict, account_name: str, contact_profile: dict
 	wa_id = msg.get("from", "")
 	profile_name = (contact_profile or {}).get("name", "")
 
+	# Meta's id is a full international number without its plus; left bare, digits that
+	# are also a valid local number would be given the site's country code.
 	profile = get_or_create_profile(
-		phone_number=wa_id,
+		phone_number=f"+{wa_id}",
 		account_name=account_name,
 		profile_name=profile_name or None,
 		wa_id=wa_id,
 	)
+	# Taken before anything is written, so a second delivery from the same sender
+	# waits here and then sees the record the first one attached to.
+	lock_profile(profile)
 
 	msg_type = msg.get("type", "text")
 
@@ -202,7 +208,7 @@ def _create_incoming_message(msg: dict, account_name: str, contact_profile: dict
 	# incoming message never triggers an API send.
 	doc.flags.ignore_permissions = True
 	doc.submit()
-	process_append_actions(doc, trigger_on="Incoming", sender_phone=wa_id, sender_name=profile_name)
+	process_append_actions(doc, trigger_on="Incoming")
 	doc.run_notifications("on_receive")
 
 	account_doc = frappe.get_cached_doc("WhatsApp Account", account_name)

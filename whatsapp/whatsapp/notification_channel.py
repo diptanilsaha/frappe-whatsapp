@@ -10,7 +10,10 @@ from frappe.email.doctype.notification.notification import (
 
 from whatsapp.install import WHATSAPP_CHANNEL
 from whatsapp.whatsapp.api.utils import log
-from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import get_or_create_profile
+from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import (
+	get_or_create_profile,
+	normalize_phone,
+)
 
 
 class WhatsAppNotificationMixin:
@@ -108,8 +111,3 @@ def send_template_message(
 	)
 	message.flags.ignore_permissions = True
 	message.submit()
-
-
-def normalize_phone(number: str) -> str:
-	# resolve_profile_by_phone matches the stored string exactly, and User.mobile_no is free-form
-	return "".join(character for character in number if character.isdigit())

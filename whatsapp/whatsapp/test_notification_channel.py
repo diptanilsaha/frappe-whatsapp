@@ -180,7 +180,7 @@ class IntegrationTestNotificationChannel(IntegrationTestCase):
 		self.assertEqual(messages[0].status, "Sent")
 
 		profile = frappe.get_doc("WhatsApp Profile", messages[0].to)
-		self.assertEqual(profile.phone_number, mobile)
+		self.assertEqual(profile.phone_number, normalize_phone(mobile))
 
 	@patch("whatsapp.whatsapp.api.whatsapp.WhatsApp.send_message")
 	def test_template_variables_come_from_the_triggering_document(self, mock_send):
@@ -237,7 +237,7 @@ class IntegrationTestNotificationChannel(IntegrationTestCase):
 		self.assertEqual(
 			frappe.db.count(
 				"WhatsApp Profile",
-				{"phone_number": mobile, "whatsapp_account": account},
+				{"phone_number": normalize_phone(mobile), "whatsapp_account": account},
 			),
 			1,
 		)
@@ -298,5 +298,5 @@ class IntegrationTestNotificationChannel(IntegrationTestCase):
 			)
 		)
 
-	def test_normalize_phone_keeps_digits_only(self):
-		self.assertEqual(normalize_phone("+91 (98765) 43210"), "919876543210")
+	def test_normalize_phone_returns_e164(self):
+		self.assertEqual(normalize_phone("+91 (98765) 43210"), "+919876543210")

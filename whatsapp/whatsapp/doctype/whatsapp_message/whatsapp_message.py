@@ -20,6 +20,7 @@ from whatsapp.whatsapp.api.utils import (
 	log,
 )
 from whatsapp.whatsapp.api.whatsapp import WhatsApp
+from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import lock_profile
 
 
 class WhatsAppMessage(Document):
@@ -357,28 +358,63 @@ class WhatsAppMessage(Document):
 		return payload
 
 
-def process_append_actions(
-	doc, trigger_on: str, sender_phone: str | None = None, sender_name: str | None = None
-) -> None:
-	"""Create linked documents from the message based on the account's append actions."""
+def process_append_actions(doc, trigger_on: str) -> None:
+	"""Attach the message to a document. A reference the message already carries is kept,
+	else the conversation's latest one is reused, and only a conversation with none
+	creates documents from the account's append actions."""
+	if doc.reference_doctype and doc.reference_docname:
+		return
+
 	account = frappe.get_cached_doc("WhatsApp Account", doc.whatsapp_account)
-	actions = account.get("append_actions", [])
+	actions = [
+		action
+		for action in account.get("append_actions", [])
+		if action.trigger_on in (trigger_on, "Both") and action.append_to
+	]
 	if not actions:
 		return
 
-	for action in actions:
-		if action.trigger_on not in (trigger_on, "Both"):
-			continue
-		if not action.append_to:
-			continue
+	lock_profile(doc.to)
+	reference = _previous_reference(doc) or _create_from_actions(doc, actions)
+	if not reference:
+		return
 
+	doctype, docname = reference
+	doc.db_set({"reference_doctype": doctype, "reference_docname": docname})
+	_link_profile(doc.to, doctype, docname)
+	doc.notify_change()
+
+
+def _previous_reference(doc) -> tuple[str, str] | None:
+	# for_update reads rows committed after this transaction's snapshot began, which a
+	# plain read under REPEATABLE READ would miss.
+	row = frappe.db.get_value(
+		"WhatsApp Message",
+		{
+			"to": doc.to,
+			"name": ("!=", doc.name),
+			"reference_doctype": ("is", "set"),
+			"reference_docname": ("is", "set"),
+		},
+		["reference_doctype", "reference_docname"],
+		order_by="creation desc",
+		for_update=True,
+	)
+	return tuple(row) if row else None
+
+
+def _create_from_actions(doc, actions) -> tuple[str, str] | None:
+	profile = frappe.get_cached_doc("WhatsApp Profile", doc.to)
+	reference = None
+
+	for action in actions:
 		try:
 			new_doc = frappe.new_doc(action.append_to)
 
 			# a mapped field is written even when the message carries no value, so an
 			# empty field on the created document means exactly that
-			new_doc.set(action.sender_field, sender_phone or doc.get("from"))
-			new_doc.set(action.sender_name_field, sender_name)
+			new_doc.set(action.sender_field, profile.phone_number)
+			new_doc.set(action.sender_name_field, profile.profile_name)
 
 			if action.message_field:
 				new_doc.set(action.message_field, doc.message)
@@ -388,8 +424,7 @@ def process_append_actions(
 
 			new_doc.insert(ignore_permissions=True)
 
-			doc.reference_doctype = action.append_to
-			doc.reference_docname = new_doc.name
+			reference = reference or (action.append_to, new_doc.name)
 		except Exception:
 			log(
 				"Error", "Message",
@@ -404,9 +439,15 @@ def process_append_actions(
 				message=f"Failed to create {action.append_to} from message {doc.name}: {frappe.get_traceback()}",
 			)
 
-	if doc.reference_doctype:
-		doc.db_set("reference_doctype", doc.reference_doctype)
-		doc.db_set("reference_docname", doc.reference_docname)
+	return reference
+
+
+def _link_profile(profile_name: str, doctype: str, docname: str) -> None:
+	profile = frappe.get_doc("WhatsApp Profile", profile_name)
+	if any(link.link_doctype == doctype and link.link_name == docname for link in profile.links):
+		return
+	profile.append("links", {"link_doctype": doctype, "link_name": docname, "link_title": docname})
+	profile.save(ignore_permissions=True)
 
 
 def _get_whatsapp_client(account, settings) -> WhatsApp:

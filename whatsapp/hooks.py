@@ -89,6 +89,7 @@ app_license = "mit"
 after_install = [
 	"whatsapp.install.setup_notification_channel",
 	"whatsapp.install.seed_languages",
+	"whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile.ensure_unique_phone_per_account",
 ]
 
 # Migration
@@ -97,6 +98,7 @@ after_install = [
 after_migrate = [
 	"whatsapp.install.setup_notification_channel",
 	"whatsapp.install.seed_languages",
+	"whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile.ensure_unique_phone_per_account",
 ]
 
 # Uninstallation

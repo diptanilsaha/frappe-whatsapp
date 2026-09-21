@@ -150,6 +150,65 @@ class TestWebhookNotifications(IntegrationTestCase):
 		)
 		self.assertEqual(docstatus, 1)
 
+	def test_repeated_messages_from_one_sender_share_one_record(self):
+		"""A conversation opens one record through the append action; replies attach to it."""
+		acc = self._make_account()
+		account = frappe.get_doc("WhatsApp Account", acc)
+		account.append(
+			"append_actions",
+			{
+				"append_to": "Print Heading",
+				"trigger_on": "Incoming",
+				"sender_field": "description",
+				"sender_name_field": "print_heading",
+			},
+		)
+		account.save()
+		sender = f"Repeat Sender {frappe.generate_hash(length=6)}"
+
+		for index in range(3):
+			_create_incoming_message(
+				{
+					"from": "14155552673",
+					"id": f"wa_msg_repeat_{index}",
+					"timestamp": "1700000000",
+					"type": "text",
+					"text": {"body": f"message {index}"},
+				},
+				acc,
+				contact_profile={"name": sender},
+			)
+
+		created = frappe.get_all("Print Heading", filters={"print_heading": sender}, pluck="name")
+		self.assertEqual(len(created), 1)
+		self.assertEqual(frappe.db.get_value("Print Heading", created[0], "description"), "+14155552673")
+		references = frappe.get_all(
+			"WhatsApp Message",
+			filters={"message_id": ("like", "wa_msg_repeat_%")},
+			pluck="reference_docname",
+		)
+		self.assertEqual(references, [created[0]] * 3)
+
+	def test_sender_id_that_is_also_a_valid_local_number_keeps_its_country_code(self):
+		acc = self._make_account()
+		with patch(
+			"whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile.get_default_region",
+			return_value="IN",
+		):
+			_create_incoming_message(
+				{
+					"from": "6591234567",
+					"id": "wa_msg_foreign_001",
+					"timestamp": "1700000000",
+					"type": "text",
+					"text": {"body": "hello from Singapore"},
+				},
+				acc,
+			)
+
+		profile = frappe.db.get_value("WhatsApp Message", {"message_id": "wa_msg_foreign_001"}, "to")
+		self.assertEqual(frappe.db.get_value("WhatsApp Profile", profile, "phone_number"), "+6591234567")
+
 	# -------------------------------------------------------------------------
 	# on_status_update
 	# -------------------------------------------------------------------------
