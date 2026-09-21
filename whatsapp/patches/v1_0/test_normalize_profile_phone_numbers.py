@@ -94,6 +94,15 @@ class IntegrationTestNormalizeProfilePhoneNumbers(IntegrationTestCase):
 
 		self.assertEqual(self._profiles(), [{"name": meta, "phone_number": "+919876500002"}])
 
+	def test_three_spellings_of_one_number_merge_into_one_profile(self):
+		self._stored_profile("+91 98765 00003", "2020-01-01 00:00:00")
+		meta = self._stored_profile("919876500003", "2020-01-02 00:00:00", wa_id="919876500003")
+		self._stored_profile("+919876500003", "2020-01-03 00:00:00")
+
+		execute()
+
+		self.assertEqual(self._profiles(), [{"name": meta, "phone_number": "+919876500003"}])
+
 	def test_stored_digits_keep_their_country_code(self):
 		singapore = self._stored_profile("6591234567", "2020-01-01 00:00:00", wa_id="6591234567")
 

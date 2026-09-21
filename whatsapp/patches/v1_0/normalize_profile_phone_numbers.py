@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import frappe
 
 from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import normalize_phone
@@ -8,29 +10,25 @@ def execute():
 	`wa_id`), or else the oldest; the other's messages and links move over."""
 	profiles = frappe.get_all(
 		"WhatsApp Profile",
-		fields=["name", "phone_number", "whatsapp_account", "wa_id", "creation"],
+		fields=["name", "phone_number", "whatsapp_account", "wa_id"],
 		order_by="creation asc",
 	)
 
-	survivors: dict[tuple[str, str], str] = {}
+	groups = defaultdict(list)
 	for profile in profiles:
 		normalized = _normalize_stored(profile.phone_number)
-		if not normalized:
-			continue
-		key = (profile.whatsapp_account, normalized)
-		survivor = survivors.get(key)
-		if not survivor:
-			survivors[key] = profile.name
-			if normalized != profile.phone_number:
-				frappe.db.set_value(
-					"WhatsApp Profile", profile.name, "phone_number", normalized, update_modified=False
-				)
-			continue
-		loser = profile.name
-		if profile.wa_id and not frappe.db.get_value("WhatsApp Profile", survivor, "wa_id"):
-			survivor, loser = loser, survivor
-			survivors[key] = survivor
-		_merge(loser, into=survivor, phone_number=normalized)
+		if normalized:
+			groups[(profile.whatsapp_account, normalized)].append(profile)
+
+	for (_account, phone_number), duplicates in groups.items():
+		survivor = next((profile for profile in duplicates if profile.wa_id), duplicates[0])
+		losers = [profile.name for profile in duplicates if profile.name != survivor.name]
+		if losers:
+			_merge(losers, into=survivor.name, phone_number=phone_number)
+		elif phone_number != survivor.phone_number:
+			frappe.db.set_value(
+				"WhatsApp Profile", survivor.name, "phone_number", phone_number, update_modified=False
+			)
 
 
 def _normalize_stored(phone_number: str | None) -> str:
@@ -42,17 +40,19 @@ def _normalize_stored(phone_number: str | None) -> str:
 	return normalize_phone(phone_number)
 
 
-def _merge(loser: str, into: str, phone_number: str) -> None:
-	frappe.db.set_value("WhatsApp Message", {"to": loser}, "to", into, update_modified=False)
-	loser_links = frappe.get_doc("WhatsApp Profile", loser).links
-	# deleted before the target is saved, or the target's unique-phone validation finds it
-	frappe.delete_doc("WhatsApp Profile", loser, ignore_permissions=True, force=True)
+def _merge(losers: list[str], into: str, phone_number: str) -> None:
+	frappe.db.set_value("WhatsApp Message", {"to": ("in", losers)}, "to", into, update_modified=False)
+	loser_links = [link for loser in losers for link in frappe.get_doc("WhatsApp Profile", loser).links]
+	# deleted before the target is saved, or the target's unique-phone validation finds them
+	for loser in losers:
+		frappe.delete_doc("WhatsApp Profile", loser, ignore_permissions=True, force=True)
 
 	target = frappe.get_doc("WhatsApp Profile", into)
 	target.phone_number = phone_number
 	existing = {(link.link_doctype, link.link_name) for link in target.links}
 	for link in loser_links:
 		if (link.link_doctype, link.link_name) not in existing:
+			existing.add((link.link_doctype, link.link_name))
 			target.append(
 				"links",
 				{
