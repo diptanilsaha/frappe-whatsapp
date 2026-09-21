@@ -19,7 +19,10 @@ from whatsapp.whatsapp.api.utils import (
 	parse_template_parameters,
 	run_access_guards,
 )
-from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import get_or_create_profile
+from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import (
+	get_or_create_profile,
+	resolve_profile_by_phone,
+)
 
 MESSAGE_FIELDS = [
 	"name",
@@ -456,11 +459,7 @@ def _resolve_to_profile(to_value: str, create_if_missing: bool = False) -> str |
 	if not default_account:
 		return None
 
-	profile_name = frappe.db.get_value(
-		"WhatsApp Profile",
-		{"phone_number": to_value, "whatsapp_account": default_account},
-		"name",
-	)
+	profile_name = resolve_profile_by_phone(to_value, default_account)
 	if profile_name:
 		return profile_name
 

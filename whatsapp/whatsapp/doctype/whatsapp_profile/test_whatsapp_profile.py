@@ -140,3 +140,59 @@ class IntegrationTestWhatsAppProfile(IntegrationTestCase):
 
 		not_found = resolve_profile_by_phone("+0000000000", acc)
 		self.assertIsNone(not_found)
+
+	def test_phone_number_is_stored_in_e164(self):
+		from unittest.mock import patch
+
+		acc = self._make_account()
+		with patch(
+			"whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile.get_default_region",
+			return_value="IN",
+		):
+			doc = frappe.get_doc(
+				doctype="WhatsApp Profile",
+				phone_number="+91 98765 43210",
+				whatsapp_account=acc,
+				profile_name="E164 Test",
+			).insert()
+		self.assertEqual(doc.phone_number, "+919876543210")
+
+	def test_one_profile_for_every_spelling_of_a_number(self):
+		from unittest.mock import patch
+
+		from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import (
+			get_or_create_profile,
+			resolve_profile_by_phone,
+		)
+
+		acc = self._make_account()
+		with patch(
+			"whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile.get_default_region",
+			return_value="IN",
+		):
+			first = get_or_create_profile("919876543210", acc, "Meta Spelling")
+			self.assertEqual(get_or_create_profile("+91 98765 43210", acc), first)
+			self.assertEqual(get_or_create_profile("9876543210", acc), first)
+			self.assertEqual(resolve_profile_by_phone("+91-98765-43210", acc), first)
+
+	def test_foreign_number_without_plus_resolves(self):
+		from unittest.mock import patch
+
+		from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import get_or_create_profile
+
+		acc = self._make_account()
+		with patch(
+			"whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile.get_default_region",
+			return_value="IN",
+		):
+			first = get_or_create_profile("14155552671", acc, "US Sender")
+			self.assertEqual(frappe.db.get_value("WhatsApp Profile", first, "phone_number"), "+14155552671")
+			self.assertEqual(get_or_create_profile("+1 (415) 555-2671", acc), first)
+
+	def test_unparseable_number_keeps_its_digits(self):
+		from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import normalize_phone
+
+		self.assertEqual(normalize_phone("+9999999999"), "+9999999999")
+		self.assertEqual(normalize_phone(" 99-99 "), "+9999")
+		self.assertEqual(normalize_phone(""), "")
+		self.assertEqual(normalize_phone(None), "")

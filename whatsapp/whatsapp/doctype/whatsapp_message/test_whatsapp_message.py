@@ -983,3 +983,182 @@ class TestUtils:
 			items=[{"id": "i1", "title": "Item 1", "description": ""}],
 		)
 		assert result["interactive"]["header"]["text"] == "Menu"
+
+
+class IntegrationTestAppendActions(IntegrationTestCase):
+	"""process_append_actions attaches a conversation to one record.
+
+	Print Heading is the target: a core doctype with two plain text fields and no
+	controller that rewrites them, so the mapped values can be read back as written.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+
+	def _account_with_action(self, trigger_on="Incoming", extra_actions=()) -> str:
+		uid = frappe.generate_hash(length=6)
+		account = frappe.get_doc(
+			doctype="WhatsApp Account",
+			account_name=f"_Test Append Account {uid}",
+			status="Active",
+			phone_id=f"phone_{uid}",
+			business_id="test_business",
+			app_id="test_app",
+			access_token="test_token",
+		)
+		account.append(
+			"append_actions",
+			{
+				"append_to": "Print Heading",
+				"trigger_on": trigger_on,
+				"sender_field": "description",
+				"sender_name_field": "print_heading",
+			},
+		)
+		for action in extra_actions:
+			account.append("append_actions", action)
+		return account.insert().name
+
+	def _profile(self, account: str, phone: str = "+14155552671") -> str:
+		name = f"Append Sender {frappe.generate_hash(length=6)}"
+		return get_or_create_profile(phone_number=phone, account_name=account, profile_name=name)
+
+	def _incoming(self, account: str, profile: str, **fields):
+		doc = frappe.get_doc(
+			doctype="WhatsApp Message",
+			direction="Incoming",
+			to=profile,
+			whatsapp_account=account,
+			message="hello",
+			status="Sent",
+			message_id=f"wamid_{frappe.generate_hash(length=8)}",
+			**fields,
+		)
+		doc.flags.ignore_permissions = True
+		doc.submit()
+		return doc
+
+	def _created_for(self, profile: str) -> list:
+		return frappe.get_all("Print Heading", filters={"print_heading": profile}, pluck="name")
+
+	def test_first_message_creates_the_record_and_links_the_profile(self):
+		from whatsapp.whatsapp.doctype.whatsapp_message.whatsapp_message import process_append_actions
+
+		account = self._account_with_action()
+		profile = self._profile(account)
+		doc = self._incoming(account, profile)
+		doc.reference_doctype = doc.reference_docname = None
+
+		process_append_actions(doc, trigger_on="Incoming")
+
+		created = self._created_for(profile)
+		self.assertEqual(len(created), 1)
+		self.assertEqual((doc.reference_doctype, doc.reference_docname), ("Print Heading", created[0]))
+		self.assertEqual(
+			frappe.db.get_value("WhatsApp Message", doc.name, ["reference_doctype", "reference_docname"]),
+			("Print Heading", created[0]),
+		)
+		self.assertEqual(frappe.db.get_value("Print Heading", created[0], "description"), "+14155552671")
+		links = frappe.get_doc("WhatsApp Profile", profile).links
+		self.assertIn(("Print Heading", created[0]), {(link.link_doctype, link.link_name) for link in links})
+
+	def test_message_that_already_has_a_reference_creates_nothing(self):
+		from whatsapp.whatsapp.doctype.whatsapp_message.whatsapp_message import process_append_actions
+
+		account = self._account_with_action()
+		profile = self._profile(account)
+		todo = frappe.get_doc(doctype="ToDo", description="existing record").insert()
+		doc = self._incoming(account, profile, reference_doctype="ToDo", reference_docname=todo.name)
+
+		process_append_actions(doc, trigger_on="Incoming")
+
+		self.assertEqual(self._created_for(profile), [])
+		self.assertEqual((doc.reference_doctype, doc.reference_docname), ("ToDo", todo.name))
+
+	def test_later_message_reuses_the_conversations_reference(self):
+		from whatsapp.whatsapp.doctype.whatsapp_message.whatsapp_message import process_append_actions
+
+		account = self._account_with_action()
+		profile = self._profile(account)
+		todo = frappe.get_doc(doctype="ToDo", description="first conversation").insert()
+		self._incoming(account, profile, reference_doctype="ToDo", reference_docname=todo.name)
+
+		second = self._incoming(account, profile)
+		second.reference_doctype = second.reference_docname = None
+		process_append_actions(second, trigger_on="Incoming")
+
+		self.assertEqual(self._created_for(profile), [])
+		self.assertEqual((second.reference_doctype, second.reference_docname), ("ToDo", todo.name))
+		self.assertEqual(
+			frappe.db.get_value("WhatsApp Message", second.name, "reference_docname"), todo.name
+		)
+
+	def test_second_message_from_a_new_sender_does_not_open_a_second_record(self):
+		from whatsapp.whatsapp.doctype.whatsapp_message.whatsapp_message import process_append_actions
+
+		account = self._account_with_action()
+		profile = self._profile(account)
+		references = []
+		for _index in range(2):
+			doc = self._incoming(account, profile)
+			doc.reference_doctype = doc.reference_docname = None
+			process_append_actions(doc, trigger_on="Incoming")
+			references.append(doc.reference_docname)
+
+		self.assertEqual(len(self._created_for(profile)), 1)
+		self.assertEqual(references[0], references[1])
+
+	def test_first_action_sets_the_reference(self):
+		from whatsapp.whatsapp.doctype.whatsapp_message.whatsapp_message import process_append_actions
+
+		account = self._account_with_action(
+			extra_actions=[
+				{
+					"append_to": "Activity Log",
+					"trigger_on": "Incoming",
+					"sender_field": "ip_address",
+					"sender_name_field": "subject",
+				}
+			]
+		)
+		profile = self._profile(account)
+		doc = self._incoming(account, profile)
+		doc.reference_doctype = doc.reference_docname = None
+
+		process_append_actions(doc, trigger_on="Incoming")
+
+		self.assertEqual(doc.reference_doctype, "Print Heading")
+		self.assertTrue(frappe.db.exists("Activity Log", {"subject": profile, "ip_address": "+14155552671"}))
+
+	def test_outgoing_uses_the_recipient_not_the_business_number(self):
+		from whatsapp.whatsapp.doctype.whatsapp_message.whatsapp_message import process_append_actions
+
+		account = self._account_with_action(trigger_on="Both")
+		profile = self._profile(account, phone="+14155552672")
+		doc = frappe.get_doc(
+			doctype="WhatsApp Message",
+			direction="Outgoing",
+			to=profile,
+			whatsapp_account=account,
+			message="hi there",
+		).insert()
+
+		process_append_actions(doc, trigger_on="Outgoing")
+
+		created = self._created_for(profile)
+		self.assertEqual(len(created), 1)
+		self.assertEqual(frappe.db.get_value("Print Heading", created[0], "description"), "+14155552672")
+
+	def test_trigger_mismatch_creates_nothing(self):
+		from whatsapp.whatsapp.doctype.whatsapp_message.whatsapp_message import process_append_actions
+
+		account = self._account_with_action(trigger_on="Outgoing")
+		profile = self._profile(account)
+		doc = self._incoming(account, profile)
+		doc.reference_doctype = doc.reference_docname = None
+
+		process_append_actions(doc, trigger_on="Incoming")
+
+		self.assertEqual(self._created_for(profile), [])
+		self.assertIsNone(doc.reference_docname)
