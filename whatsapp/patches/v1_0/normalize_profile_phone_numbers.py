@@ -42,7 +42,12 @@ def _normalize_stored(phone_number: str | None) -> str:
 
 def _merge(losers: list[str], into: str, phone_number: str) -> None:
 	frappe.db.set_value("WhatsApp Message", {"to": ("in", losers)}, "to", into, update_modified=False)
-	loser_links = [link for loser in losers for link in frappe.get_doc("WhatsApp Profile", loser).links]
+	loser_links = frappe.get_all(
+		"Dynamic Link",
+		filters={"parenttype": "WhatsApp Profile", "parent": ("in", losers)},
+		fields=["link_doctype", "link_name", "link_title"],
+		order_by="parent, idx",
+	)
 	# deleted before the target is saved, or the target's unique-phone validation finds them
 	for loser in losers:
 		frappe.delete_doc("WhatsApp Profile", loser, ignore_permissions=True, force=True)
@@ -53,12 +58,5 @@ def _merge(losers: list[str], into: str, phone_number: str) -> None:
 	for link in loser_links:
 		if (link.link_doctype, link.link_name) not in existing:
 			existing.add((link.link_doctype, link.link_name))
-			target.append(
-				"links",
-				{
-					"link_doctype": link.link_doctype,
-					"link_name": link.link_name,
-					"link_title": link.link_title,
-				},
-			)
+			target.append("links", link)
 	target.save(ignore_permissions=True)
