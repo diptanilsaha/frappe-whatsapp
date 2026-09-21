@@ -359,14 +359,9 @@ class WhatsAppMessage(Document):
 
 
 def process_append_actions(doc, trigger_on: str) -> None:
-	"""Attach the message to a document, creating one from the account's append actions
-	only when the conversation has none yet.
-
-	A message that already carries a reference (set by the sender, or by a host hook
-	that matched the profile's number) keeps it. Otherwise the conversation's previous
-	reference is reused, so a second message never opens a second record. Only a
-	conversation with no reference at all runs the append actions.
-	"""
+	"""Attach the message to a document. A reference the message already carries is kept,
+	else the conversation's latest one is reused, and only a conversation with none
+	creates documents from the account's append actions."""
 	if doc.reference_doctype and doc.reference_docname:
 		return
 
@@ -380,22 +375,19 @@ def process_append_actions(doc, trigger_on: str) -> None:
 		return
 
 	lock_profile(doc.to)
-	reference = _previous_reference(doc)
-	if not reference:
-		reference = _create_from_actions(doc, actions)
+	reference = _previous_reference(doc) or _create_from_actions(doc, actions)
 	if not reference:
 		return
 
-	doc.reference_doctype, doc.reference_docname = reference
-	doc.db_set("reference_doctype", doc.reference_doctype)
-	doc.db_set("reference_docname", doc.reference_docname)
-	_link_profile(doc.to, *reference)
+	doctype, docname = reference
+	doc.db_set({"reference_doctype": doctype, "reference_docname": docname})
+	_link_profile(doc.to, doctype, docname)
 	doc.notify_change()
 
 
 def _previous_reference(doc) -> tuple[str, str] | None:
-	# A locking read, so a message another request committed after this
-	# transaction's snapshot began is still seen once the profile lock is held.
+	# for_update reads rows committed after this transaction's snapshot began, which a
+	# plain read under REPEATABLE READ would miss.
 	row = frappe.db.get_value(
 		"WhatsApp Message",
 		{
