@@ -189,6 +189,26 @@ class TestWebhookNotifications(IntegrationTestCase):
 		)
 		self.assertEqual(references, [created[0]] * 3)
 
+	def test_sender_id_that_is_also_a_valid_local_number_keeps_its_country_code(self):
+		acc = self._make_account()
+		with patch(
+			"whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile.get_default_region",
+			return_value="IN",
+		):
+			_create_incoming_message(
+				{
+					"from": "6591234567",
+					"id": "wa_msg_foreign_001",
+					"timestamp": "1700000000",
+					"type": "text",
+					"text": {"body": "hello from Singapore"},
+				},
+				acc,
+			)
+
+		profile = frappe.db.get_value("WhatsApp Message", {"message_id": "wa_msg_foreign_001"}, "to")
+		self.assertEqual(frappe.db.get_value("WhatsApp Profile", profile, "phone_number"), "+6591234567")
+
 	# -------------------------------------------------------------------------
 	# on_status_update
 	# -------------------------------------------------------------------------

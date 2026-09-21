@@ -138,8 +138,10 @@ def _create_incoming_message(msg: dict, account_name: str, contact_profile: dict
 	wa_id = msg.get("from", "")
 	profile_name = (contact_profile or {}).get("name", "")
 
+	# Meta's id is a full international number without its plus; left bare, digits that
+	# are also a valid local number would be given the site's country code.
 	profile = get_or_create_profile(
-		phone_number=wa_id,
+		phone_number=f"+{wa_id}",
 		account_name=account_name,
 		profile_name=profile_name or None,
 		wa_id=wa_id,

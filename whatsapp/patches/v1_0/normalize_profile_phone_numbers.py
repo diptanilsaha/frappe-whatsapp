@@ -14,7 +14,7 @@ def execute():
 
 	survivors: dict[tuple[str, str], str] = {}
 	for profile in profiles:
-		normalized = normalize_phone(profile.phone_number)
+		normalized = _normalize_stored(profile.phone_number)
 		if not normalized:
 			continue
 		key = (profile.whatsapp_account, normalized)
@@ -26,22 +26,32 @@ def execute():
 					"WhatsApp Profile", profile.name, "phone_number", normalized, update_modified=False
 				)
 			continue
+		loser = profile.name
 		if profile.wa_id and not frappe.db.get_value("WhatsApp Profile", survivor, "wa_id"):
-			_merge(survivor, into=profile.name)
-			survivors[key] = profile.name
-			frappe.db.set_value(
-				"WhatsApp Profile", profile.name, "phone_number", normalized, update_modified=False
-			)
-		else:
-			_merge(profile.name, into=survivor)
+			survivor, loser = loser, survivor
+			survivors[key] = survivor
+		_merge(loser, into=survivor, phone_number=normalized)
 
 
-def _merge(loser: str, into: str) -> None:
+def _normalize_stored(phone_number: str | None) -> str:
+	# A digits-only number was written by Meta's webhook or by the notification channel
+	# stripping a plus, so it already carries its country code and must not be read as a
+	# national number: Singapore's 6591234567 is also a valid Indian mobile.
+	if phone_number and phone_number.strip().isdigit():
+		phone_number = f"+{phone_number.strip()}"
+	return normalize_phone(phone_number)
+
+
+def _merge(loser: str, into: str, phone_number: str) -> None:
 	frappe.db.set_value("WhatsApp Message", {"to": loser}, "to", into, update_modified=False)
+	loser_links = frappe.get_doc("WhatsApp Profile", loser).links
+	# deleted before the target is saved, or the target's unique-phone validation finds it
+	frappe.delete_doc("WhatsApp Profile", loser, ignore_permissions=True, force=True)
 
 	target = frappe.get_doc("WhatsApp Profile", into)
+	target.phone_number = phone_number
 	existing = {(link.link_doctype, link.link_name) for link in target.links}
-	for link in frappe.get_doc("WhatsApp Profile", loser).links:
+	for link in loser_links:
 		if (link.link_doctype, link.link_name) not in existing:
 			target.append(
 				"links",
@@ -52,5 +62,3 @@ def _merge(loser: str, into: str) -> None:
 				},
 			)
 	target.save(ignore_permissions=True)
-
-	frappe.delete_doc("WhatsApp Profile", loser, ignore_permissions=True, force=True)
