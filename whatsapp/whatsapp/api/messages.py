@@ -99,8 +99,7 @@ def send_message(
 	if not (message or "").strip() and not attach:
 		frappe.throw(_("Cannot send an empty message."))
 
-	if reference_doctype and reference_docname:
-		_validate_reference(reference_doctype, reference_docname)
+	_validate_send_scope(reference_doctype, reference_docname)
 
 	# Before anything is created: an attachment resolving to no File would otherwise leave
 	# a message with no body and no media.
@@ -190,9 +189,7 @@ def send_template(
 	"""Send an approved template and return the created WhatsApp Message's name."""
 	run_access_guards()
 
-	if reference_doctype and reference_docname:
-		_validate_reference(reference_doctype, reference_docname)
-
+	_validate_send_scope(reference_doctype, reference_docname)
 	_validate_template_for_reference(template, reference_doctype)
 	_validate_template_is_approved(template)
 
@@ -264,6 +261,17 @@ def _validate_reference(reference_doctype: str, reference_docname: str) -> None:
 			),
 			frappe.PermissionError,
 		)
+
+
+def _validate_send_scope(reference_doctype: str | None, reference_docname: str | None) -> None:
+	"""A send is authorised by its reference document; without one, by WhatsApp Message create.
+
+	Otherwise any logged-in user could send from the business number by omitting the reference.
+	"""
+	if reference_doctype and reference_docname:
+		_validate_reference(reference_doctype, reference_docname)
+	else:
+		frappe.has_permission("WhatsApp Message", "create", throw=True)
 
 
 def _conversation_order(message: dict) -> tuple:

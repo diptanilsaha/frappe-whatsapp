@@ -354,6 +354,7 @@ def get_settings() -> WhatsAppSettings:
 
 @frappe.whitelist()
 def get_active_accounts() -> list[WhatsAppAccount]:
+	frappe.has_permission("WhatsApp Account", "read", throw=True)
 	accounts = frappe.get_all(
 		"WhatsApp Account",
 		filters={"status": "Active"},
@@ -533,6 +534,7 @@ def _mark_deleted_templates(meta_variants: set[tuple[str, str]], account_name: s
 
 @frappe.whitelist()
 def sync_from_account(account_name: str) -> dict:
+	frappe.has_permission("WhatsApp Account", "read", throw=True)
 	whatsapp = _get_whatsapp_client(account_name)
 
 	synced = []
@@ -721,6 +723,7 @@ def get_sendable_templates(reference_doctype: str) -> list[dict]:
 
 @frappe.whitelist()
 def sync_all() -> dict:
+	frappe.has_permission("WhatsApp Account", "read", throw=True)
 	accounts = get_active_accounts()
 	settings = get_settings()
 
