@@ -605,6 +605,8 @@ def get_logs(
 	account: str | None = None,
 	limit: int = 100,
 ) -> list[dict]:
+	frappe.has_permission("WhatsApp Log", "read", throw=True)
+
 	filters = {}
 	if event_type:
 		filters["event_type"] = event_type

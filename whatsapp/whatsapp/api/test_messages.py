@@ -26,6 +26,7 @@ from whatsapp.whatsapp.api.messages import (
 	send_template,
 )
 from whatsapp.whatsapp.api.utils import (
+	get_logs,
 	humanize_error_message,
 	infer_content_type,
 	mime_type_for_content_type,
@@ -34,7 +35,10 @@ from whatsapp.whatsapp.api.utils import (
 from whatsapp.whatsapp.doctype.whatsapp_profile.whatsapp_profile import get_or_create_profile
 from whatsapp.whatsapp.doctype.whatsapp_template.whatsapp_template import (
 	create_template_and_push,
+	get_active_accounts,
 	get_sendable_templates,
+	sync_all,
+	sync_from_account,
 )
 
 
@@ -1494,3 +1498,32 @@ class IntegrationTestSendMessage(WithoutHostAccessGuards, IntegrationTestCase):
 		failed = next(m for m in messages if m["name"] == name)
 		self.assertEqual(failed["status"], "Failed")
 		self.assertEqual(failed["error_message"], "(#131030) Recipient phone number not in allowed list")
+
+
+class IntegrationTestPermissionGates(WithoutHostAccessGuards, IntegrationTestCase):
+	"""A logged-in user with no role must not read logs, send, or reach the account endpoints."""
+
+	def test_plain_user_is_refused(self):
+		endpoints = [
+			(get_logs, ()),
+			(send_message, ("15550001111", "hello")),
+			(send_template, ("tpl", "15550001111")),
+			(get_active_accounts, ()),
+			(sync_from_account, ("_Test Account",)),
+			(sync_all, ()),
+		]
+		with self.set_user("test1@example.com"):
+			for endpoint, args in endpoints:
+				with self.subTest(endpoint=endpoint.__name__), self.assertRaises(frappe.PermissionError):
+					endpoint(*args)
+
+	def test_a_readable_reference_authorises_the_send_without_message_create(self):
+		"""Past the gate the send fails on recipient resolution, not on permission."""
+		todo = frappe.get_doc(doctype="ToDo", description="_Test WhatsApp reference").insert()
+		frappe.share.add("ToDo", todo.name, "test1@example.com", read=1)
+		with (
+			self.set_user("test1@example.com"),
+			patch("whatsapp.whatsapp.api.messages._resolve_to_profile", return_value=None),
+		):
+			with self.assertRaisesRegex(frappe.ValidationError, "Could not resolve recipient"):
+				send_message("15550001111", "hello", reference_doctype="ToDo", reference_docname=todo.name)
