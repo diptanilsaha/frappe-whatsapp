@@ -20,6 +20,9 @@ frappe.ui.form.on("WhatsApp Account", {
 	setup: function (frm) {
 		// set here rather than on refresh: a grid control keeps the get_query it was
 		// created with, and the first rows render before any refresh handler runs
+		frm.set_query("append_to", "append_actions", () => ({
+			filters: { istable: 0, issingle: 0 },
+		}));
 		for (const fieldname of MAPPING_FIELDS) {
 			frm.set_query(fieldname, "append_actions", (doc, cdt, cdn) => ({
 				query: "whatsapp.whatsapp.doctype.whatsapp_account.whatsapp_account.get_append_field_options",

@@ -118,6 +118,25 @@ class IntegrationTestWhatsAppAccount(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			account.save()
 
+	def test_append_action_rejects_a_child_table_target(self):
+		account = self._append_action(
+			self._account("A"), append_to="DocField", sender_field="fieldname", sender_name_field="label"
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, "cannot append to DocField"):
+			account.save()
+
+	def test_append_action_rejects_a_single_target(self):
+		account = self._append_action(
+			self._account("A"),
+			append_to="System Settings",
+			sender_field="app_name",
+			sender_name_field="app_name",
+		)
+
+		with self.assertRaisesRegex(frappe.ValidationError, "cannot append to System Settings"):
+			account.save()
+
 	def test_append_action_accepts_a_mapping_the_target_doctype_supports(self):
 		account = self._append_action(
 			self._account("A"), sender_field="mobile_no", sender_name_field="first_name"

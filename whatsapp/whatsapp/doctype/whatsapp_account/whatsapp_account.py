@@ -48,10 +48,17 @@ class WhatsAppAccount(Document):
 
 		`Document.set` accepts a name no field has and drops it on insert, so a stale or
 		mistyped mapping would otherwise create documents with the value missing and
-		nothing to say why.
+		nothing to say why. A child table or single target fails later instead, once per
+		message, into the log.
 		"""
 		for action in self.append_actions:
 			target_meta = frappe.get_meta(action.append_to)
+			if target_meta.istable or target_meta.issingle:
+				frappe.throw(
+					_("Row #{0}: cannot append to {1}; a child table or single has no list to add to").format(
+						action.idx, action.append_to
+					)
+				)
 			for slot in APPEND_FIELD_TYPES:
 				_validate_mapped_field(action, slot, target_meta)
 
